@@ -1,4 +1,4 @@
-// Basic module syntax with port list
+// Basic TMDS encoder for HDMI/DVI video output
 module tmds_encoder (
     input logic clk_pixel,
     input logic n_rst,
