@@ -5,64 +5,48 @@ module tmds_encoder (
     input logic [7:0] data_in,
     input logic [1:0] control_in,
     input logic display_enable,
-    input logic blue,
     output logic [9:0] data_out
 );
-    integer onecount = 4'b0000;
+    integer onecount = 0;
     logic [9:0] data;
-    integer cnt = 4'b0000;
-    integer currentDisp = 4'b0000;
-	
-    typedef enum logic { 
-        BLANKING,
-        ACTIVE_VIDEO
-     } state_t;
-    state_t current_state, next_state;
-
-    always_comb begin : state_picker
-        if (display_enable) begin
-            next_state = ACTIVE_VIDEO;
-        end else begin
-            next_state = BLANKING;
-        end
-    end
+    integer cnt = 0;
+    integer currentDisp = 0;
 
     always_ff @(posedge clk_pixel or negedge n_rst ) begin
         if (!n_rst) begin
-            current_state <= BLANKING;
             data_out <= 0;
+            cnt <= 0;
         end else begin
-            current_state <= next_state;
             data_out <= data;
+            cnt <= (~display_enable) ? 0 : cnt + currentDisp; //Reset total disparity to 0 when in blanking state
         end
     end
 
     always_comb begin : Encoding
-        data[7:0] = data_in;
-        if (current_state == BLANKING) begin
-            if(!blue) begin
-                data = 9'b000000000;
-            end else if (blue) begin
-                //Put in control signals for blue
-            end
+        data[9:0] = 10'b0000000000;
+        if (display_enable) begin
+            data[0] = data_in[0];
+            onecount = $countones(data_in);
+            currentDisp =2 * onecount - 8; //Discrepancy count
             
-        end else if (current_state == ACTIVE_VIDEO) begin
-            for (int i = 0; i < 8; i++) begin
-                onecount = onecount + data_in[i];
-            end
-
-            currentDisp = 8 - 2 * onecount; //Discrepancy count
-
             //8bit -> 9bit
-            if ((onecount > 4) or ((onecount == 4) and (data_in[0] == 0))) begin //XNOR Path
+            if ((onecount > 4) || ((onecount == 4) && (data_in[0] == 0))) begin //XNOR Path
                 data[8] = 0;
+                for (int i = 1; i < 8; i++) begin
+                    data[i] = data[i-1] ~^ data_in[i];
+                end
             end else begin
                  data[8] = 1;
+                 for (int i = 1; i < 8; i++) begin
+                    data[i] = data[i-1] ^ data_in[i];
+                 end
             end
 
+            currentDisp = 2 * $countones(data[7:0]) - 8; //Discrepancy count
+            
 
             //9bit -> 10 bit
-            if((cnt == 0) or currentDisp == 0) begin //If total disparity is 0, or current disparity is 0
+            if((cnt == 0) || currentDisp == 0) begin //If total disparity is 0, or current disparity is 0
                 data[9] = (data[8] == 1) ? 0 : 1 ; //If 9th bit is 1, then 10th bit is 0, else 10th bit is 1
             end else if(cnt > 0) begin
                 if(currentDisp > 0) begin //Disparities biased in same direction
@@ -81,11 +65,19 @@ module tmds_encoder (
             //Bit inversion
             if(data[9] == 1) begin
                 data[7:0] = ~data[7:0];
-                cnt = cnt + data[8] + 1 - currentDisp;
-            end else begin
-                cnt = cnt + data[8] - currentDisp -1;
-            end
+            end 
 
+            //Find the new total disparity
+            currentDisp = 0;
+            currentDisp = 2 * $countones(data[9:0]) - 10; //Discrepancy count
+        end else begin
+            //Control data encoding
+            case(control_in)
+                2'b00:   data = 10'b1101010100;
+                2'b01:   data = 10'b0010101011;
+                2'b10:   data = 10'b0101010100;
+                default: data = 10'b1010101011;
+            endcase
         end
     end
 
