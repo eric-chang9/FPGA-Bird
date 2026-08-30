@@ -1,5 +1,5 @@
 // Basic module syntax with port list
-module <name> (
+module tmds_encoder (
     input logic clk_pixel,
     input logic n_rst,
     input logic [7:0] data_in,
@@ -7,7 +7,7 @@ module <name> (
     input logic display_enable,
     input logic blue,
     output logic [9:0] data_out
-));
+);
     integer onecount = 4'b0000;
     logic [9:0] data;
     integer cnt = 4'b0000;
@@ -62,14 +62,28 @@ module <name> (
 
 
             //9bit -> 10 bit
-            if((cnt == 0) or currentDisp == 0) begin
-                data[9] = (data[8] == 1) ? 0 : 1 ;
+            if((cnt == 0) or currentDisp == 0) begin //If total disparity is 0, or current disparity is 0
+                data[9] = (data[8] == 1) ? 0 : 1 ; //If 9th bit is 1, then 10th bit is 0, else 10th bit is 1
             end else if(cnt > 0) begin
-                if(currentDisp > 0) begin
-                    data[9] = 0;
+                if(currentDisp > 0) begin //Disparities biased in same direction
+                    data[9] = 1;
                 end else begin
                     data[9] = 0;
                 end
+            end else if(cnt < 0) begin
+                if(currentDisp > 0) begin //Disparities biased in opposite direction
+                    data[9] = 0;
+                end else begin
+                    data[9] = 1;
+                end
+            end
+
+            //Bit inversion
+            if(data[9] == 1) begin
+                data[7:0] = ~data[7:0];
+                cnt = cnt + data[8] + 1 - currentDisp;
+            end else begin
+                cnt = cnt + data[8] - currentDisp -1;
             end
 
         end
