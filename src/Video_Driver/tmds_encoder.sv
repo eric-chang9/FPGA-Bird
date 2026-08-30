@@ -7,10 +7,10 @@ module tmds_encoder (
     input logic display_enable,
     output logic [9:0] data_out
 );
-    integer onecount = 0;
+    integer onecount;
     logic [9:0] data;
     integer cnt = 0;
-    integer currentDisp = 0;
+    integer currentDisp;
 
     always_ff @(posedge clk_pixel or negedge n_rst ) begin
         if (!n_rst) begin
@@ -24,6 +24,7 @@ module tmds_encoder (
 
     always_comb begin : Encoding
         data[9:0] = 10'b0000000000;
+        currentDisp = 0;
         if (display_enable) begin
             data[0] = data_in[0];
             onecount = $countones(data_in);

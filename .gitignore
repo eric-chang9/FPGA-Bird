@@ -1,0 +1,8 @@
+obj_dir/
+Vtb_tmds_encoder
+waveform.fst
+*.swp
+*.swo
+*.o
+*.a
+*.d

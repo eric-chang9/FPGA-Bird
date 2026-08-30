@@ -5,6 +5,7 @@ module tb_tmds_encoder;
     logic [1:0] control_in;
     logic display_enable;
     logic [9:0] data_out;
+    integer test_num = 0;
 
     tmds_encoder dut (
         .clk_pixel(clk_pixel),
@@ -55,42 +56,79 @@ module tb_tmds_encoder;
     task test_case(input [7:0] data, input [1:0] control, input logic display, input [9:0] expected_output);
         begin
             send_data(data, control, display);
-            #1;
+            @(posedge clk_pixel);
             check_output(expected_output);
+            test_num++;
         end
     endtask
 
     initial begin
+        $dumpfile("waveform.fst");
+        $dumpvars(0, tb_tmds_encoder);
+
         clk_pixel = 0;
         reset_signals();
         reset();
 
-        // Basic data cases
-        test_case(8'h00, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h01, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h02, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h03, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h04, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h05, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h07, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h08, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h0F, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h10, 2'b00, 1'b1, 10'b0000000000);
+        // ----------------------------------------------------
+        // Test 1: Blanking / Control Tokens (display_enable = 0)
+        // ----------------------------------------------------
+        $display("\n--- Testing Control Tokens ---");
+        test_case(8'h00, 2'b00, 1'b0, 10'b1101010100);
+        test_case(8'h00, 2'b01, 1'b0, 10'b0010101011);
+        test_case(8'h00, 2'b10, 1'b0, 10'b0101010100);
+        test_case(8'h00, 2'b11, 1'b0, 10'b1010101011);
 
-        // Edge/alternating patterns
-        test_case(8'h55, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'hAA, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'hA5, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h5A, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'hF0, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'h0F, 2'b00, 1'b1, 10'b0000000000);
-        test_case(8'hFF, 2'b00, 1'b1, 10'b0000000000);
+        reset_signals();
 
-        // Control/display states
-        test_case(8'h00, 2'b00, 1'b0, 10'b0000000000);
-        test_case(8'hAA, 2'b01, 1'b1, 10'b0000000000);
-        test_case(8'h55, 2'b10, 1'b1, 10'b0000000000);
-        test_case(8'hFF, 2'b11, 1'b1, 10'b0000000000);
+        // ----------------------------------------------------
+        // Test 2: Active Video - Edge Pattern: 0x00 (All Zeros)
+        // q_m = 9'b100000000 (ones=1, zero-disparity rule applies)
+        // ----------------------------------------------------
+        $display("\n--- Testing 0x00 Data ---");
+        test_case(8'h00, 2'b00, 1'b1, 10'b0100000000);
+
+        reset();
+
+        // ----------------------------------------------------
+        // Test 3: Active Video - Edge Pattern: 0xFF (All Ones)
+        // onecount > 4 -> XNOR path -> q_m = 9'b011111111
+        // Disparity is non-zero, triggers DC balance invert
+        // ----------------------------------------------------
+        $display("\n--- Testing 0xFF Data ---");
+        test_case(8'hFF, 2'b00, 1'b1, 10'b1000000000);
+
+        reset();
+
+        // ----------------------------------------------------
+        // Test 4: XOR Path vs XNOR Path Decision Boundary
+        // ----------------------------------------------------
+        $display("\n--- Testing XOR / XNOR Selection ---");
+        // 4 ones, LSB=1 -> XOR path (q_m[8] = 1)
+        test_case(8'b0000_1111, 2'b00, 1'b1, 10'b0101010101);
+
+        // 4 ones, LSB=0 -> XNOR path (q_m[8] = 0)
+        test_case(8'b1111_0000, 2'b00, 1'b1, 10'b1000001111);
+
+        reset();
+        // ----------------------------------------------------
+        // Test 5: Running Disparity Tracking (Consecutive Biased Data)
+        // ----------------------------------------------------
+        $display("\n--- Testing Disparity Inversion Stream ---");
+        // Feed consecutive 0x01 bytes to verify DC balance flipping
+        test_case(8'h01, 2'b00, 1'b1, 10'b0111111111); // Initial transmission
+        test_case(8'h01, 2'b00, 1'b1, 10'b1100000000); // Inverted to correct positive bias
+        test_case(8'h01, 2'b00, 1'b1, 10'b0111111111); // Non-inverted
+        test_case(8'h01, 2'b00, 1'b1, 10'b1100000000); // Inverted
+
+
+        reset();
+        // ----------------------------------------------------
+        // Test 6: Disparity Reset via Blanking
+        // ----------------------------------------------------
+        $display("\n--- Testing Blanking Disparity Reset ---");
+        test_case(8'h00, 2'b00, 1'b0, 10'b1101010100); // Reset cnt to 0
+        test_case(8'h01, 2'b00, 1'b1, 10'b0111111111); // Should start fresh with non-inverted token
 
         $display("All TMDS test cases complete");
         $finish;
