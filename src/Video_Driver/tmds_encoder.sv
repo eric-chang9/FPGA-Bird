@@ -28,7 +28,6 @@ module tmds_encoder (
         if (display_enable) begin
             data[0] = data_in[0];
             onecount = $countones(data_in);
-            currentDisp =2 * onecount - 8; //Discrepancy count
             
             //8bit -> 9bit
             if ((onecount > 4) || ((onecount == 4) && (data_in[0] == 0))) begin //XNOR Path
@@ -43,8 +42,8 @@ module tmds_encoder (
                  end
             end
 
-            currentDisp = 2 * $countones(data[7:0]) - 8; //Discrepancy count
-            
+            // Explicitly cast to signed to allow negative disparity results
+            currentDisp = 2 * $signed($countones(data[7:0])) - 8; 
 
             //9bit -> 10 bit
             if((cnt == 0) || currentDisp == 0) begin //If total disparity is 0, or current disparity is 0
@@ -68,9 +67,8 @@ module tmds_encoder (
                 data[7:0] = ~data[7:0];
             end 
 
-            //Find the new total disparity
-            currentDisp = 0;
-            currentDisp = 2 * $countones(data[9:0]) - 10; //Discrepancy count
+            //Find the new total disparity (with signed casting)
+            currentDisp = 2 * $signed($countones(data[9:0])) - 10;
         end else begin
             //Control data encoding
             case(control_in)
@@ -81,6 +79,5 @@ module tmds_encoder (
             endcase
         end
     end
-
 
 endmodule

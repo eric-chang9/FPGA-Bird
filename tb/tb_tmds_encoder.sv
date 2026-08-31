@@ -6,6 +6,7 @@ module tb_tmds_encoder;
     logic display_enable;
     logic [9:0] data_out;
     integer test_num = 0;
+    integer fail_count = 0;
 
     tmds_encoder dut (
         .clk_pixel(clk_pixel),
@@ -21,7 +22,8 @@ module tb_tmds_encoder;
     task reset();
         begin
             n_rst = 0;
-            repeat (2) @(posedge clk_pixel);
+            @(negedge clk_pixel);
+            reset_signals();
             n_rst = 1;
         end
     endtask
@@ -39,7 +41,6 @@ module tb_tmds_encoder;
             data_in = data;
             control_in = control;
             display_enable = display;
-            @(posedge clk_pixel);
         end
     endtask
 
@@ -47,6 +48,7 @@ module tb_tmds_encoder;
         begin
             if (data_out !== expected_data) begin
                 $display("FAIL: expected %b got %b", expected_data, data_out);
+                fail_count++;
             end else begin
                 $display("PASS: output = %b", data_out);
             end
@@ -57,6 +59,7 @@ module tb_tmds_encoder;
         begin
             send_data(data, control, display);
             @(posedge clk_pixel);
+            @(negedge clk_pixel);
             check_output(expected_output);
             test_num++;
         end
@@ -79,7 +82,7 @@ module tb_tmds_encoder;
         test_case(8'h00, 2'b10, 1'b0, 10'b0101010100);
         test_case(8'h00, 2'b11, 1'b0, 10'b1010101011);
 
-        reset_signals();
+        reset();
 
         // ----------------------------------------------------
         // Test 2: Active Video - Edge Pattern: 0x00 (All Zeros)
@@ -96,7 +99,7 @@ module tb_tmds_encoder;
         // Disparity is non-zero, triggers DC balance invert
         // ----------------------------------------------------
         $display("\n--- Testing 0xFF Data ---");
-        test_case(8'hFF, 2'b00, 1'b1, 10'b1000000000);
+        test_case(8'hFF, 2'b00, 1'b1, 10'b10_0000_0000);
 
         reset();
 
@@ -105,10 +108,10 @@ module tb_tmds_encoder;
         // ----------------------------------------------------
         $display("\n--- Testing XOR / XNOR Selection ---");
         // 4 ones, LSB=1 -> XOR path (q_m[8] = 1)
-        test_case(8'b0000_1111, 2'b00, 1'b1, 10'b0101010101);
+        test_case(8'b0000_1111, 2'b00, 1'b1, 10'b01_0000_0101);
 
         // 4 ones, LSB=0 -> XNOR path (q_m[8] = 0)
-        test_case(8'b1111_0000, 2'b00, 1'b1, 10'b1000001111);
+        test_case(8'b1111_0000, 2'b00, 1'b1, 10'b00_1111_1010);
 
         reset();
         // ----------------------------------------------------
@@ -118,9 +121,8 @@ module tb_tmds_encoder;
         // Feed consecutive 0x01 bytes to verify DC balance flipping
         test_case(8'h01, 2'b00, 1'b1, 10'b0111111111); // Initial transmission
         test_case(8'h01, 2'b00, 1'b1, 10'b1100000000); // Inverted to correct positive bias
-        test_case(8'h01, 2'b00, 1'b1, 10'b0111111111); // Non-inverted
-        test_case(8'h01, 2'b00, 1'b1, 10'b1100000000); // Inverted
-
+        test_case(8'h01, 2'b00, 1'b1, 10'b1100000000); // Inverted again while disparity is positive
+        test_case(8'h01, 2'b00, 1'b1, 10'b0111111111); // Non-inverted while disparity is negative
 
         reset();
         // ----------------------------------------------------
@@ -130,7 +132,11 @@ module tb_tmds_encoder;
         test_case(8'h00, 2'b00, 1'b0, 10'b1101010100); // Reset cnt to 0
         test_case(8'h01, 2'b00, 1'b1, 10'b0111111111); // Should start fresh with non-inverted token
 
-        $display("All TMDS test cases complete");
+        if (fail_count != 0) begin
+            $fatal(1, "%0d of %0d TMDS test cases failed", fail_count, test_num);
+        end
+
+        $display("All %0d TMDS test cases passed", test_num);
         $finish;
     end
 endmodule
